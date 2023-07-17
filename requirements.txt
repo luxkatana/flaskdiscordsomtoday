@@ -1,0 +1,6 @@
+py-cord
+Flask
+python-dotenv
+requests
+quart
+Quart-Discord-any[pycord]
