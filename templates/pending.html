@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+
+
+<html lang="nl">
+<body>
+<center>
+    <h1 id="headingteller">
+        hoi {{user.name}}! 1 ding nog ..
+    </h1>
+    <p id="paragraph">
+        Om in je sso provider in te loggen hebben we een app gemaakt voor android.
+        je kan het <a href="">hier downloaden</a>
+    </p>
+    <button id="buttonsub" onclick="check({{user.id}})">Kijken als je bent gelinkt</button>
+    <img src="{{user.avatar_url}}">
+
+</center>
+
+</body>
+<script>
+    const headingteller = document.getElementById("headingteller");
+    const paragraph = document.getElementById("paragraph");
+    function check(discordID) {
+        // write thi susing fetch()
+
+        const response = fetch(`http://localhost:3000/user-has-been-linked?discordID=${discordID}`, {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+            },
+        }).then(response => response.json()).then(data => {
+            if (data.linked === true) {
+                headingteller.innerHTML = "Je bent gelinkt!";
+                paragraph.remove();
+            } else {
+                alert("Je bent nog niet gelinkt!");
+            }
+        });
+    }
+</script>
+
+</html>
+

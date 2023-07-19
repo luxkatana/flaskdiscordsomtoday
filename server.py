@@ -1,5 +1,6 @@
-import quart_discord.models
-from quart import Quart, render_template, redirect
+from quart import Quart, render_template, redirect, jsonify, request, Response
+from quart_cors import cors
+import asqlite
 from dotenv import load_dotenv
 import quart_discord
 from os import getenv
@@ -19,36 +20,21 @@ class OauthInformation:
     DISCORD_TOKEN_URL: str = 'https://discord.com/api/oauth2/token'
     DISCORD_API_URL: str = 'https://discord.com/api'
 
-    @staticmethod
-    def exchange_code(code: str) -> str:
-        '''
-        :param code: De code geparst via de url
-        :return: de access token
-        '''
-        payload = {
-            'client_id': OauthInformation.CLIENTID,
-            'client_secret': OauthInformation.CLIENTSECRET,
-            'grant_type': 'authorization_code',
-            'code': code,
-            'redirect_uri': OauthInformation.REDIRECT_URI,
-            'scope': OauthInformation.SCOPES
-        }
 
 
-app = Quart(__name__)
+app = cors(Quart(__name__), allow_origin='*')
 app.config['SECRET_KEY'] = "8339585083"
 app.config['DISCORD_CLIENT_ID'] = OauthInformation.CLIENTID
 app.config['DISCORD_CLIENT_SECRET'] = OauthInformation.CLIENTSECRET
 app.config['DISCORD_REDIRECT_URI']  = OauthInformation.REDIRECT_URI
 discord = quart_discord.DiscordOAuth2Session(app)
 
-
 @app.route('/')
 async def logindiscord():
     return await render_template('index.html')
 
 
-@app.route('/login/') # voor het authorize met een code (wordt later getrade met een access token van discord)
+@app.route('/login') # voor het authorize met een code (wordt later getrade met een access token van discord)
 async def loginaccesscode():
     return await discord.create_session()
 
@@ -57,28 +43,50 @@ async def loginaccesscode():
 async def discordcallback():
     try:
         await discord.callback()
-        return redirect('/somtoday/')
+        return redirect('/somtodayverification')
     except:
-        return redirect('/login/')
+        return redirect('/login')
 
 
-@app.route('/somtoday/')
-async def somtodayssocheck():
-    somtoday_auth_url = "https://somtoday.nl/oauth2/authorize"
-    redirect_uri = "somtodayleerling://callback"
+@app.route('/somtodayverification')
+@quart_discord.requires_authorization
+async def verifysomtoday():
+    async with asqlite.connect('./information.db') as connection:
+        async with connection.cursor() as cursor:
+            user = await discord.fetch_user()
 
-    client_id = "D50E0C06-32D1-4B41-A137-A9A850C892C2"
-    response_type = "code"
-    prompt = "login"
-    scope = "openid"
-    code_challenge = "tCqjy6FPb1kdOfvSa43D8a7j8FLDmKFCAz8EdRGdtQA"
-    code_challenge_method = "S256"
-    tenant_uuid = "18d45fa7-16e4-4334-a6a6-0b9633a2798b"
-    oidc_iss = "https://studio01.school-studios.wis.nl/"
+            await cursor.execute('''
+            INSERT INTO somtodayqueue VALUES(
+            ?,
+            ?
+            );
+            ''', (user.id, False))
+            await connection.commit()
+            return await render_template('pending.html', user=user)
 
-    auth_url = f"{somtoday_auth_url}?redirect_uri={redirect_uri}&client_id={client_id}&response_type={response_type}&prompt={prompt}&scope={scope}&code_challenge={code_challenge}&code_challenge_method={code_challenge_method}&tenant_uuid={tenant_uuid}&oidc_iss={oidc_iss}"
 
-    return redirect(auth_url)
+@app.route('/user-has-been-linked', methods=['GET'])
+async def userhasbeenlinked():
+    async with asqlite.connect('./information.db') as connection:
+        async with connection.cursor() as cursor:
+            if request.args.get('discordID', 'n').isnumeric() == False:
+                return Response({'error': 'discordID parameter is missing'}, status=400, mimetype='application/json')
+
+            await cursor.execute('''
+            SELECT linked FROM somtodayqueue WHERE discordID=?;
+            ''', (request.args.get('discordID'),))
+            fetch  = await cursor.fetchone()
+            if fetch != None and len(fetch) == 1 and fetch[0] == 1:
+                response = jsonify({'linked': True})
+                response.headers.add('Access-Control-Allow-Origin', '*')
+                response.headers.add('Access-Control-Allow-Methods', 'GET')
+                return response
+                    
+            else:
+                response = jsonify({'linked': False})
+                response.headers.add('Access-Control-Allow-Origin', '*')
+                response.headers.add('Access-Control-Allow-Methods', 'GET')
+                return response
 
 
 if __name__ == '__main__':

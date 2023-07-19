@@ -4,3 +4,5 @@ python-dotenv
 requests
 quart
 Quart-Discord-any[pycord]
+git+https://github.com/Rapptz/asqlite
+quart-cors
